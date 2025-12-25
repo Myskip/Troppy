@@ -81,8 +81,8 @@ class OpenAICompatibleClient(LLMClient):
         payload = {
             "model": kwargs.get("model", self.model),
             "messages": messages,
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 1000),
+            "temperature": kwargs.get("temperature", 1.0),
+            "max_tokens": kwargs.get("max_tokens", 4096*16),
             "top_p": kwargs.get("top_p", 1.0),
             "frequency_penalty": kwargs.get("frequency_penalty", 0),
             "presence_penalty": kwargs.get("presence_penalty", 0)
