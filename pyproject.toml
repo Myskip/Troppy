@@ -3,7 +3,7 @@ name = "troppy"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "prompt-toolkit>=3.0.52",
     "requests>=2.32.5",
