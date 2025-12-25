@@ -9,12 +9,26 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from agent import TroopyAgent
 from agent import OpenAICompatibleClient
+import env_loader
 
 
 class TroopyConfig:
-    api_url = "http://lanz.hikvision.com/v3/openai/model"
-    api_key = "sk-db195deb67fd48b1af29e84e687b91c5"
-    model = "GLM-4.7"
+    """
+    Troopy 配置类
+
+    从环境变量加载配置，如果未设置则使用默认值。
+    优先级: 环境变量 > .env 文件 > 硬编码默认值
+    """
+    # 配置将在类定义后从 env_loader 加载
+    api_url: str
+    api_key: str
+    model: str
+
+# 从 env_loader 加载配置并设置类属性
+_config = env_loader.get_troopy_config()
+TroopyConfig.api_url = _config["api_url"]
+TroopyConfig.api_key = _config["api_key"]
+TroopyConfig.model = _config["model"]
 
 
 class DefaultTroopy(TroopyAgent):
