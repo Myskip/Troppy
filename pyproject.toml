@@ -1,0 +1,10 @@
+[project]
+name = "troppy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "prompt-toolkit>=3.0.52",
+    "requests>=2.32.5",
+]

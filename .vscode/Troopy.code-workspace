@@ -1,0 +1,28 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		}
+	],
+	"settings": {},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": [
+			{
+				"name": "troopy调试",
+				"type": "debugpy",
+				"request": "launch",
+				"program": "${workspaceFolder}/src/troopy.py",
+				"console": "integratedTerminal"
+			},
+			{
+				"name": "当前文件",
+				"type": "debugpy",
+				"request": "launch",
+				"program": "${file}",
+				"console": "integratedTerminal"
+			}
+		],
+		"compounds": []
+	}
+}
