@@ -202,7 +202,7 @@ class Troopy:
             try:
                 user_input = await self.session.prompt_async(
                     HTML(
-                        f'<prompt>To[{TroopyMgr.instance().current_agent.name}]>>> </prompt>'),
+                        f'<prompt>[{TroopyMgr.instance().current_agent.name}]>>> </prompt>'),
                     bottom_toolbar=self.get_bottom_toolbar()
                 )
 
