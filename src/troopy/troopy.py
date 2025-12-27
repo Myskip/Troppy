@@ -7,9 +7,11 @@ from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.shortcuts import print_formatted_text
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
-from agent import TroopyAgent
-from agent import OpenAICompatibleClient
-import env_loader
+from .agent import TroopyAgent
+from .agent import LLMClient
+from .agent import OpenAICompatibleClient
+from ..config import env_loader
+from ..agents import PythonAssistant
 
 
 class TroopyConfig:
@@ -24,25 +26,12 @@ class TroopyConfig:
     api_key: str
     model: str
 
+
 # 从 env_loader 加载配置并设置类属性
 _config = env_loader.get_troopy_config()
 TroopyConfig.api_url = _config["api_url"]
 TroopyConfig.api_key = _config["api_key"]
 TroopyConfig.model = _config["model"]
-
-
-class DefaultTroopy(TroopyAgent):
-    def __init__(self):
-        super().__init__(
-            name="DefaultTroopy",
-            role="assistant",
-            llm_client=OpenAICompatibleClient(
-                api_base=TroopyConfig.api_url,
-                api_key=TroopyConfig.api_key,
-                model=TroopyConfig.model
-            ),
-            system_message="你是一个专业的Python编程助手。"
-        )
 
 
 class TroopyMgr:
@@ -56,10 +45,16 @@ class TroopyMgr:
 
     def __init__(self):
         if not hasattr(self, 'initialized'):
+            python_assistant = PythonAssistant(llm_client=OpenAICompatibleClient(
+                api_base=TroopyConfig.api_url,
+                api_key=TroopyConfig.api_key,
+                model=TroopyConfig.model
+            ))
+            self.agents = {python_assistant.id: python_assistant}
             self.agents = {}
-            default_troopy = DefaultTroopy()
-            self.agents[default_troopy.id] = default_troopy
-            self.current_troopy: TroopyAgent = default_troopy
+            self.agents[python_assistant.id] = python_assistant
+            # self.agents = {python_assistant.id: python_assistant}
+            self.current_troopy: TroopyAgent = python_assistant
             self.initialized = True
 
     @classmethod
@@ -79,11 +74,11 @@ class TroopyMgr:
                     cls._instance = cls()
         return cls._instance
 
-    def create_agent(self, name: str, role: str, llm_client: OpenAICompatibleClient, system_message: str = "") -> TroopyAgent:
-        """创建一个新的Agent"""
-        agent = TroopyAgent(name, role, llm_client, system_message)
-        self.agents[name] = agent
-        return agent
+    # def create_agent(self, name: str, role: str, llm_client: OpenAICompatibleClient, system_message: str = "") -> TroopyAgent:
+    #     """创建一个新的Agent"""
+    #     agent = TroopyAgent(name, role, llm_client, system_message)
+    #     self.agents[agent.id] = agent
+    #     return agent
 
 
 class Troopy:
@@ -225,13 +220,8 @@ class Troopy:
         await troopy.run()
 
 
-def main():
-    """同步入口点"""
+if __name__ == "__main__":
     try:
         asyncio.run(Troopy.async_main())
     except KeyboardInterrupt:
         pass
-
-
-if __name__ == "__main__":
-    main()

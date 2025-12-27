@@ -4,7 +4,11 @@
 			"path": ".."
 		}
 	],
-	"settings": {},
+	"settings": {
+		"files.exclude": {
+			"**/__pycache__": true
+		}
+	},
 	"launch": {
 		"version": "0.2.0",
 		"configurations": [
@@ -12,8 +16,11 @@
 				"name": "troopy调试",
 				"type": "debugpy",
 				"request": "launch",
-				"program": "${workspaceFolder}/src/troopy.py",
-				"console": "integratedTerminal"
+				"module": "src.troopy.troopy",
+				"cwd": "${workspaceFolder}",
+				// "program": "${workspaceFolder}/src/test/main.py",
+				"console": "integratedTerminal",
+				"justMyCode": true
 			},
 			{
 				"name": "当前文件",
