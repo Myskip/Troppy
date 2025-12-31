@@ -12,6 +12,8 @@ from .agent import LLMClient
 from .agent import OpenAICompatibleClient
 from ..config import env_loader
 from ..agents import PythonAssistant
+import threading
+import sys
 
 
 class TroopyConfig:
@@ -53,7 +55,6 @@ class TroopyMgr:
             self.agents = {python_assistant.id: python_assistant}
             self.agents = {}
             self.agents[python_assistant.id] = python_assistant
-            # self.agents = {python_assistant.id: python_assistant}
             self.current_troopy: TroopyAgent = python_assistant
             self.initialized = True
 
@@ -105,17 +106,18 @@ class Troopy:
         self.style = Style.from_dict(self.STYLE_DICT)
         self.key_bindings = KeyBindings()
         self.is_processing = False
+        self._cancel_event = threading.Event()
+        self._listener_thread = None
 
         # 设置 ESC 键绑定
         @self.key_bindings.add(Keys.Escape)
         def _(event):
             """按下 ESC 键时取消当前正在处理的请求"""
             if self.is_processing:
+                self._cancel_event.set()
                 TroopyMgr.instance().current_agent.cancel_request()
                 print_formatted_text(
                     HTML('<ansired>\n[请求已被取消]</ansired>'), style=self.style)
-                # 强制刷新输出
-                event.app.renderer.render(None, in_layout=False)
 
         self.session = PromptSession(
             history=InMemoryHistory(),
@@ -124,11 +126,63 @@ class Troopy:
             key_bindings=self.key_bindings
         )
 
+    def _start_esc_listener(self):
+        """启动ESC键监听线程"""
+        self._cancel_event.clear()
+
+        def listen_for_esc():
+            """监听ESC键的后台线程"""
+            import termios
+            import tty
+            old_settings = None
+            try:
+                # 保存原始终端设置
+                old_settings = termios.tcgetattr(sys.stdin)
+                tty.setraw(sys.stdin.fileno())
+
+                while self.is_processing:
+                    # 检查是否有输入可用
+                    import select
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        ch = sys.stdin.read(1)
+                        # ESC键是ASCII 27或\x1b
+                        if ch == '\x1b' or ord(ch) == 27:
+                            self._cancel_event.set()
+                            TroopyMgr.instance().current_agent.cancel_request()
+                            print("\n[ESC] 请求取消中...")
+                            break
+            except Exception as e:
+                pass  # 忽略错误，避免干扰主循环
+            finally:
+                # 恢复原始终端设置
+                if old_settings:
+                    try:
+                        termios.tcsetattr(
+                            sys.stdin, termios.TCSADRAIN, old_settings)
+                    except:
+                        pass
+
+        self._listener_thread = threading.Thread(
+            target=listen_for_esc, daemon=True)
+        self._listener_thread.start()
+
+    def _stop_esc_listener(self):
+        """停止ESC键监听线程"""
+        self.is_processing = False
+        self._cancel_event.clear()
+        if self._listener_thread and self._listener_thread.is_alive():
+            self._listener_thread.join(timeout=0.5)
+        self._listener_thread = None
+
     async def ask_agent(self, text: str) -> str:
         """模拟一个耗时的异步后台任务"""
         self.is_processing = True
+        self._start_esc_listener()  # 启动ESC监听线程
+
         try:
-            response = TroopyMgr.instance().current_agent.send_message(text)
+            # 在线程池中运行同步的 send_message，允许事件循环继续处理按键
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, TroopyMgr.instance().current_agent.send_message, text)
             print_formatted_text(
                 HTML(
                     f'<agent><b>{TroopyMgr.instance().current_agent.name}:</b> </agent>'), style=self.style)
@@ -140,10 +194,12 @@ class Troopy:
                 current_agent = TroopyMgr.instance().current_agent
                 if current_agent.conversation_history and current_agent.conversation_history[-1]["role"] == "user":
                     current_agent.conversation_history.pop()
+                print_formatted_text(
+                    HTML('<ansired>\n[请求已被取消]</ansired>'), style=self.style)
                 return ""
             raise
         finally:
-            self.is_processing = False
+            self._stop_esc_listener()  # 停止ESC监听线程
 
     def get_bottom_toolbar(self) -> HTML:
         """获取底部状态栏内容"""
@@ -183,7 +239,7 @@ class Troopy:
             return True
 
         # 处理异步指令
-        result = await self.ask_agent(user_input)
+        _ = await self.ask_agent(user_input)
 
         return True
 

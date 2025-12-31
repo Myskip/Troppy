@@ -13,6 +13,7 @@ import requests
 import time
 import uuid
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 
 @dataclass
@@ -56,6 +57,7 @@ class OpenAICompatibleClient(LLMClient):
         }
         self.logger = logging.getLogger(__name__)
         self._cancel_event = threading.Event()
+        self._executor = ThreadPoolExecutor(max_workers=1)
 
     def cancel_request(self) -> None:
         """取消当前请求"""
@@ -64,6 +66,13 @@ class OpenAICompatibleClient(LLMClient):
     def _reset_cancel(self):
         """重置取消标志"""
         self._cancel_event.clear()
+
+    def _do_request(self, url: str, payload: dict) -> str:
+        """实际执行HTTP请求的内部方法（在线程中运行）"""
+        response = requests.post(url, headers=self.headers, json=payload, timeout=300)
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
 
     def chat(self, messages: List[Dict[str, str]], **kwargs) -> str:
         """
@@ -85,7 +94,6 @@ class OpenAICompatibleClient(LLMClient):
         payload = {
             "model": kwargs.get("model", self.model),
             "messages": messages,
-            "stream"
             "temperature": kwargs.get("temperature", 1.0),
             "max_tokens": kwargs.get("max_tokens", 4096*16),
             "top_p": kwargs.get("top_p", 1.0),
@@ -98,29 +106,29 @@ class OpenAICompatibleClient(LLMClient):
 
         try:
             self.logger.info(f"发送请求到: {url}")
-            response = requests.post(
-                url, headers=self.headers, json=payload, timeout=300)
 
-            # 检查是否被取消
-            if self._cancel_event.is_set():
-                raise Exception("请求已被取消")
+            # 在线程池中执行请求
+            future = self._executor.submit(self._do_request, url, payload)
 
-            response.raise_for_status()
+            # 轮询取消事件和请求完成
+            while not future.done():
+                if self._cancel_event.is_set():
+                    # 取消请求（注意：这不会立即停止底层HTTP请求，但会取消future）
+                    future.cancel()
+                    raise Exception("请求已被取消")
+                # 短暂休眠避免CPU占用过高
+                time.sleep(0.05)
 
-            result = response.json()
-            content = result["choices"][0]["message"]["content"]
-
+            # 获取结果
+            content = future.result()
             self.logger.info("请求成功完成")
             return content
 
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             if self._cancel_event.is_set():
                 raise Exception("请求已被取消")
             self.logger.error(f"API请求失败: {str(e)}")
             raise Exception(f"API请求失败: {str(e)}")
-        except KeyError as e:
-            self.logger.error(f"响应格式错误: {str(e)}")
-            raise Exception(f"响应格式错误: {str(e)}")
 
 
 class Agent:
