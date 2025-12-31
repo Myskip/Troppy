@@ -126,7 +126,6 @@ class Troopy:
 
     async def ask_agent(self, text: str) -> str:
         """模拟一个耗时的异步后台任务"""
-        # await asyncio.sleep(1)
         self.is_processing = True
         try:
             response = TroopyMgr.instance().current_agent.send_message(text)

@@ -31,6 +31,10 @@ class LLMClient(ABC):
         """发送聊天请求并返回响应"""
         pass
 
+    @abstractmethod
+    def cancel_request(self):
+        pass
+
 class OpenAICompatibleClient(LLMClient):
     """OpenAI兼容的LLM客户端"""
 
@@ -53,7 +57,7 @@ class OpenAICompatibleClient(LLMClient):
         self.logger = logging.getLogger(__name__)
         self._cancel_event = threading.Event()
 
-    def cancel_request(self):
+    def cancel_request(self) -> None:
         """取消当前请求"""
         self._cancel_event.set()
 
@@ -81,17 +85,21 @@ class OpenAICompatibleClient(LLMClient):
         payload = {
             "model": kwargs.get("model", self.model),
             "messages": messages,
+            "stream"
             "temperature": kwargs.get("temperature", 1.0),
             "max_tokens": kwargs.get("max_tokens", 4096*16),
             "top_p": kwargs.get("top_p", 1.0),
-            "frequency_penalty": kwargs.get("frequency_penalty", 0),
-            "presence_penalty": kwargs.get("presence_penalty", 0)
+            "stream": False,
+            "thinking": {
+                "type": "disabled",
+                "clear_thinking": True
+            }
         }
 
         try:
             self.logger.info(f"发送请求到: {url}")
             response = requests.post(
-                url, headers=self.headers, json=payload, timeout=30)
+                url, headers=self.headers, json=payload, timeout=300)
 
             # 检查是否被取消
             if self._cancel_event.is_set():
@@ -127,7 +135,7 @@ class Agent:
             system_message: 系统消息，用于设置Agent的初始角色
         """
         self.llm_client = llm_client
-        self.system_message = system_message or "你是一个有用的AI助手。"
+        self.system_message = system_message
         self.conversation_history: List[Dict[str, str]] = []
         self.logger = logging.getLogger(__name__)
 
@@ -207,7 +215,7 @@ class Agent:
     def cancel_request(self) -> None:
         """取消当前消息收发请求"""
         if hasattr(self.llm_client, 'cancel_request'):
-            self.cancel_request()
+            self.llm_client.cancel_request()
             self.logger.info("请求取消已发送")
 
     def save_conversation(self, filepath: str) -> None:
