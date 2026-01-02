@@ -24,6 +24,20 @@ class Message:
     timestamp: float = time.time()
 
 
+@dataclass
+class ThinkingConfig:
+    """Thinking配置数据类"""
+    enabled: bool = False       # 是否启用thinking
+    clear_thinking: bool = True # 是否清除思考内容
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式，用于API请求"""
+        return {
+            "type": "enabled" if self.enabled else "disabled",
+            "clear_thinking": self.clear_thinking
+        }
+
+
 class LLMClient(ABC):
     """LLM客户端抽象基类"""
 
@@ -34,6 +48,18 @@ class LLMClient(ABC):
 
     @abstractmethod
     def cancel_request(self):
+        pass
+
+    @property
+    @abstractmethod
+    def thinking(self) -> ThinkingConfig:
+        """获取thinking配置"""
+        pass
+
+    @thinking.setter
+    @abstractmethod
+    def thinking(self, value: ThinkingConfig):
+        """设置thinking配置"""
         pass
 
 class OpenAICompatibleClient(LLMClient):
@@ -59,6 +85,9 @@ class OpenAICompatibleClient(LLMClient):
         self._cancel_event = threading.Event()
         self._executor = ThreadPoolExecutor(max_workers=1)
 
+        # thinking 配置
+        self._thinking_config = ThinkingConfig()
+
     def cancel_request(self) -> None:
         """取消当前请求"""
         self._cancel_event.set()
@@ -66,6 +95,21 @@ class OpenAICompatibleClient(LLMClient):
     def _reset_cancel(self):
         """重置取消标志"""
         self._cancel_event.clear()
+
+    @property
+    def thinking(self) -> ThinkingConfig:
+        """获取thinking配置"""
+        return self._thinking_config
+
+    @thinking.setter
+    def thinking(self, value: ThinkingConfig) -> None:
+        """设置thinking配置
+
+        Args:
+            value: ThinkingConfig对象，如 ThinkingConfig(type="enabled", clear_thinking=False)
+        """
+        self._thinking_config = value
+        self.logger.info(f"Thinking配置已更新: {self._thinking_config.to_dict()}")
 
     def _do_request(self, url: str, payload: dict) -> str:
         """实际执行HTTP请求的内部方法（在线程中运行）"""
@@ -98,10 +142,7 @@ class OpenAICompatibleClient(LLMClient):
             "max_tokens": kwargs.get("max_tokens", 4096*16),
             "top_p": kwargs.get("top_p", 1.0),
             "stream": False,
-            "thinking": {
-                "type": "disabled",
-                "clear_thinking": True
-            }
+            "thinking": self._thinking_config.to_dict()
         }
 
         try:
