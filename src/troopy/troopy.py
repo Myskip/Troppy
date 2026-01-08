@@ -1,7 +1,9 @@
 import asyncio
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import WordCompleter, Completer, Completion
+from prompt_toolkit.document import Document
+import os
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.shortcuts import print_formatted_text
@@ -10,7 +12,7 @@ from prompt_toolkit.keys import Keys
 from .agent import TroopyAgent
 from .agent import LLMClient
 from .agent import OpenAICompatibleClient
-from ..config import env_loader
+from ..config import get_troopy_config
 from ..agents import PythonAssistant
 import threading
 import sys
@@ -30,10 +32,7 @@ class TroopyConfig:
 
 
 # 从 env_loader 加载配置并设置类属性
-_config = env_loader.get_troopy_config()
-TroopyConfig.api_url = _config["api_url"]
-TroopyConfig.api_key = _config["api_key"]
-TroopyConfig.model = _config["model"]
+troopy_config = get_troopy_config()
 
 
 class TroopyMgr:
@@ -48,9 +47,9 @@ class TroopyMgr:
     def __init__(self):
         if not hasattr(self, 'initialized'):
             python_assistant = PythonAssistant(llm_client=OpenAICompatibleClient(
-                api_base=TroopyConfig.api_url,
-                api_key=TroopyConfig.api_key,
-                model=TroopyConfig.model
+                api_base=get_troopy_config().api_url,
+                api_key=get_troopy_config().api_key,
+                model=get_troopy_config().model
             ))
             self.agents = {python_assistant.id: python_assistant}
             self.agents = {}
@@ -82,6 +81,59 @@ class TroopyMgr:
     #     return agent
 
 
+class FileCompleter(Completer):
+    """
+    自定义补全器：当输入 @ 时显示当前目录的文件列表
+    否则使用默认的命令补全
+    """
+
+    def __init__(self, command_words):
+        self.command_words = command_words
+
+    def get_completions(self, document: Document, complete_event):
+        """获取补全建议"""
+        text_before_cursor = document.text_before_cursor
+        words = text_before_cursor.split()
+
+        # 检查是否正在输入 @ 符号后的文件名
+        if words and words[-1].startswith('@'):
+            # 获取用户已经输入的部分（去掉 @）
+            prefix = words[-1][1:] if len(words[-1]) > 1 else ""
+
+            try:
+                # 获取当前目录的文件和目录
+                current_dir = os.getcwd()
+                entries = os.listdir(current_dir)
+
+                for entry in sorted(entries):
+                    # 过滤匹配前缀的文件
+                    if entry.startswith(prefix):
+                        # 如果是目录，添加 / 后缀
+                        display_name = entry + \
+                            '/' if os.path.isdir(os.path.join(current_dir,
+                                                 entry)) else entry
+                        yield Completion(
+                            text=entry,
+                            start_position=-len(prefix),
+                            display=display_name,
+                            display_meta='directory' if os.path.isdir(
+                                os.path.join(current_dir, entry)) else 'file'
+                        )
+            except PermissionError:
+                pass
+
+        # 如果不在 @ 后面，提供命令补全
+        elif not words or (len(words) == 1 and not text_before_cursor.endswith(' ')):
+            last_word = words[-1] if words else ""
+            for word in self.command_words:
+                if word.lower().startswith(last_word.lower()):
+                    yield Completion(
+                        text=word,
+                        start_position=-len(last_word),
+                        display=word
+                    )
+
+
 class Troopy:
     """Troopy REPL 交互类"""
 
@@ -102,7 +154,7 @@ class Troopy:
 
     def __init__(self):
         """初始化 Troopy REPL"""
-        self.completer = WordCompleter(self.COMPLETER_WORDS, ignore_case=True)
+        self.completer = FileCompleter(self.COMPLETER_WORDS)
         self.style = Style.from_dict(self.STYLE_DICT)
         self.key_bindings = KeyBindings()
         self.is_processing = False
@@ -243,16 +295,18 @@ class Troopy:
 
         return True
 
+    def get_prompt(self):
+        return HTML(f'<prompt>{TroopyMgr.instance().current_agent.name}> </prompt>')
+
     async def run(self):
 
-        banner = HTML('<b>Troopy</b> v1.0.0\n<b>Model</b>: GLM4.7')
+        banner = HTML(
+            '******************************************************\n<b>Troopy</b> v1.0.0\n<b>Model</b>: GLM4.7')
         print_formatted_text(banner, style=self.style)
 
         while True:
             try:
-                user_input = await self.session.prompt_async(
-                    HTML(
-                        f'<prompt>[{TroopyMgr.instance().current_agent.name}]>>> </prompt>'),
+                user_input = await self.session.prompt_async(self.get_prompt,
                     bottom_toolbar=self.get_bottom_toolbar()
                 )
 
